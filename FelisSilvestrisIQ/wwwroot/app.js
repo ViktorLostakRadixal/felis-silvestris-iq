@@ -1,229 +1,261 @@
 ﻿document.addEventListener('DOMContentLoaded', () => {
-    // DOM Elements
-    const startScreen = document.getElementById('start-screen');
-    const testArea = document.getElementById('test-area');
-    const startButton = document.getElementById('start-button');
-    const sessionIdInput = document.getElementById('session-id-input');
-    const durationInput = document.getElementById('duration-input');
-    const toast = document.getElementById('toast-notification');
+    // === DOM Elements ===
+    const screens = {
+        setup: document.getElementById('setup-screen'),
+        qrCode: document.getElementById('qr-code-screen'),
+        test: document.getElementById('test-area')
+    };
+    const setupInput = document.getElementById('setup-input');
+    const locationInput = document.getElementById('location-input');
+    const dbStatusElement = document.getElementById('db-status');
+    const prepareButton = document.getElementById('prepare-button');
+    const qrCanvas = document.getElementById('qr-code-canvas');
+    const uuidDisplay = document.getElementById('session-uuid-display');
+    const startTestButton = document.getElementById('start-test-button');
+    const statusIndicator = document.getElementById('status-indicator');
 
-    // Test Configuration
-    const TARGET_SIZE_PX = 100;
-    const TARGET_COLOR = 'white';
-
-    // State Variables
-    let sessionData = {};
+    // === State Variables ===
+    let sessionUUID = null;
+    let clientStartTimeEpoch = null;
     let isTestRunning = false;
-    let testTimeout;
-    let currentTarget = null; // Reference to the moving target element
+    let eventBuffer = [];
+    let dataUpdateInterval = null;
+    let currentTarget = null;
+    const TARGET_SIZE_PX = 100;
+    const LOCAL_STORAGE_KEY = 'felisIQ_lastSetup';
 
     // =========================================================================
-    // UI FEEDBACK
+    // INITIALIZATION
     // =========================================================================
-    function showToast(message, type = 'success') {
-        toast.textContent = message;
-        toast.className = `toast show ${type}`;
-        setTimeout(() => {
-            toast.className = 'toast hidden';
-        }, 5000); // Hide after 5 seconds
+    function init() {
+        const lastSetup = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (lastSetup) {
+            setupInput.value = lastSetup;
+        }
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(pos => {
+                locationInput.value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`;
+            }, err => {
+                locationInput.value = `Error: ${err.message}`;
+            });
+        } else {
+            locationInput.value = "Geolocation not supported";
+        }
+
+        checkDbStatus();
+        // UPDATED: Health check interval changed to 5 seconds
+        setInterval(checkDbStatus, 5000);
+
+        prepareButton.addEventListener('click', prepareExperiment);
+        startTestButton.addEventListener('click', startTest);
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
     }
 
     // =========================================================================
-    // EVENT LOGGING (No changes here)
+    // SCREEN & UI MANAGEMENT
     // =========================================================================
-    function initSessionLog() {
-        sessionData = {
-            sessionId: sessionIdInput.value || `Session_${new Date().toISOString()}`,
-            userAgent: navigator.userAgent,
-            device: {
-                viewport: { width: window.innerWidth, height: window.innerHeight },
-                screen: {
-                    width: window.screen.width,
-                    height: window.screen.height,
-                    pixelRatio: window.devicePixelRatio
-                }
-            },
-            clientStartTime: new Date().toISOString(),
-            clientEndTime: null,
-            events: []
-        };
-        logEvent('SessionStart', sessionData.device);
-    }
-
-    function logEvent(eventType, data) {
-        if (!sessionData.events) return;
-        sessionData.events.push({
-            timestamp: Date.now() - new Date(sessionData.clientStartTime).getTime(),
-            eventType: eventType,
-            data: data
+    function switchScreen(screenName) {
+        Object.keys(screens).forEach(key => {
+            screens[key].classList.add('hidden');
         });
-        console.log(`Logged Event: ${eventType}`, data);
+        screens[screenName].classList.remove('hidden');
+    }
+
+    function setStatusIndicator(state) {
+        if (state === 'success') {
+            statusIndicator.className = 'success';
+            setTimeout(() => statusIndicator.className = '', 1500);
+        } else if (state === 'error') {
+            statusIndicator.className = 'error';
+        } else {
+            statusIndicator.className = '';
+        }
     }
 
     // =========================================================================
-    // TEST LOGIC
+    // EXPERIMENT WORKFLOW
     // =========================================================================
-    async function startTest() {
-        if (!sessionIdInput.value) {
-            alert('Please enter an Experiment ID before starting.');
+    async function prepareExperiment() {
+        const setupInfo = setupInput.value.trim();
+        if (!setupInfo) {
+            alert('Please fill in the Experimental Setup description.');
             return;
         }
 
-        initSessionLog();
-        isTestRunning = true;
+        localStorage.setItem(LOCAL_STORAGE_KEY, setupInfo);
+        clientStartTimeEpoch = Date.now();
 
-        startScreen.classList.add('hidden');
-        testArea.classList.remove('hidden');
+        const payload = {
+            setupInfo: setupInfo,
+            locationInfo: {
+                latitude: parseFloat(locationInput.value.split(',')[0]) || null,
+                longitude: parseFloat(locationInput.value.split(',')[1]) || null,
+                error: locationInput.value.startsWith('Error') ? locationInput.value : null
+            },
+            userAgent: navigator.userAgent,
+            device: {
+                viewport: { width: window.innerWidth, height: window.innerHeight },
+                screen: { width: screen.width, height: screen.height, pixelRatio: window.devicePixelRatio }
+            },
+            clientStartTime: new Date(clientStartTimeEpoch).toISOString()
+        };
 
         try {
-            await document.documentElement.requestFullscreen();
-            logEvent('FullscreenEntered', {});
-            spawnInitialTarget();
+            const response = await fetch('/api/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+            const result = await response.json();
+            sessionUUID = result.id;
+            uuidDisplay.textContent = `Session ID: ${sessionUUID}`;
+            QRCode.toCanvas(qrCanvas, sessionUUID, { width: 256 });
+            switchScreen('qrCode');
+        } catch (error) {
+            console.error('Failed to prepare experiment:', error);
+            alert(`Error preparing session: ${error.message}`);
+        }
+    }
 
-            const duration = parseInt(durationInput.value, 10);
-            if (duration > 0) {
-                testTimeout = setTimeout(endTest, duration * 1000);
-                logEvent('TestAutoStart', { duration });
-            } else {
-                logEvent('TestManualStart', { duration: 'infinite' });
-            }
+    async function startTest() {
+        isTestRunning = true;
+        switchScreen('test');
+        try {
+            await document.documentElement.requestFullscreen();
+            spawnInitialTarget();
+            dataUpdateInterval = setInterval(sendBufferedData, 60 * 1000);
         } catch (err) {
             console.error(`Fullscreen request failed: ${err.message}`);
-            logEvent('FullscreenError', { message: err.message });
-            endTest(true); // End test immediately if fullscreen fails
+            endTest(true);
         }
     }
 
     async function endTest(forced = false) {
         if (!isTestRunning) return;
         isTestRunning = false;
-
-        clearTimeout(testTimeout);
+        clearInterval(dataUpdateInterval);
 
         if (document.fullscreenElement) {
             await document.exitFullscreen();
         }
 
-        // ** THE FIX IS HERE **
-        // We wrap the UI updates in a setTimeout. This gives the browser a moment
-        // to finish exiting fullscreen mode before we try to manipulate the DOM.
-        // This prevents the rendering race condition.
-        setTimeout(() => {
-            testArea.classList.add('hidden');
-            startScreen.classList.remove('hidden');
-            testArea.innerHTML = ''; // Clean up
-            currentTarget = null;
+        if (!forced) {
+            await sendBufferedData();
+        }
 
-            if (forced) {
-                logEvent('TestEnd', { reason: 'Forced stop due to error' });
-            } else {
-                sessionData.clientEndTime = new Date().toISOString();
-                logEvent('TestEnd', { reason: 'Duration elapsed or manually stopped' });
-                sendDataToServer(); // Now this will be called when the UI is ready for the toast.
+        setTimeout(() => {
+            switchScreen('setup');
+            sessionUUID = null;
+            eventBuffer = [];
+            if (screens.test) {
+                screens.test.innerHTML = '<div id="status-indicator"></div>';
             }
-        }, 100); // A 100ms delay is imperceptible but enough for the browser.
+        }, 100);
     }
 
-    function handleManualStop() {
-        if (isTestRunning) {
-            logEvent('TestInterrupted', { reason: 'User pressed Escape' });
+    function handleFullscreenChange() {
+        if (!document.fullscreenElement && isTestRunning) {
+            logEvent('FullscreenExited', { reason: 'User or browser action' });
             endTest();
         }
     }
 
+    // =========================================================================
+    // TEST AREA LOGIC
+    // =========================================================================
     function spawnInitialTarget() {
         const target = document.createElement('div');
         target.className = 'target';
-
         const x = Math.random() * (window.innerWidth - TARGET_SIZE_PX);
         const y = Math.random() * (window.innerHeight - TARGET_SIZE_PX);
-        target.style.left = `${x}px`;
-        target.style.top = `${y}px`;
-        target.style.width = `${TARGET_SIZE_PX}px`;
-        target.style.height = `${TARGET_SIZE_PX}px`;
-        target.style.backgroundColor = TARGET_COLOR;
-
+        target.style.transform = `translate(${x}px, ${y}px)`;
         target.addEventListener('pointerdown', handleTargetHit);
-
-        testArea.appendChild(target);
+        screens.test.appendChild(target);
         currentTarget = target;
-
-        logEvent('TargetSpawned', { x: Math.round(x), y: Math.round(y), size: TARGET_SIZE_PX, color: TARGET_COLOR });
+        logEvent('TargetSpawned', { x: Math.round(x), y: Math.round(y) });
     }
 
     function handleTargetHit(event) {
-        if (!isTestRunning) return;
-
-        logEvent('TargetHit', {
-            x: event.clientX,
-            y: event.clientY
-        });
-
+        logEvent('TargetHit', { x: event.clientX, y: event.clientY });
         moveTarget();
     }
 
     function moveTarget() {
-        const currentX = parseFloat(currentTarget.style.left);
-        const currentY = parseFloat(currentTarget.style.top);
-
+        const transformMatrix = new DOMMatrix(window.getComputedStyle(currentTarget).transform);
+        const currentX = transformMatrix.m41;
+        const currentY = transformMatrix.m42;
         const screenLongerEdge = Math.max(window.innerWidth, window.innerHeight);
         const minDistance = screenLongerEdge / 3;
-
-        let newX, newY, distance;
-        let attempts = 0;
-
+        let newX, newY, distance, attempts = 0;
         do {
             newX = Math.random() * (window.innerWidth - TARGET_SIZE_PX);
             newY = Math.random() * (window.innerHeight - TARGET_SIZE_PX);
-            const dx = newX - currentX;
-            const dy = newY - currentY;
-            distance = Math.sqrt(dx * dx + dy * dy);
+            distance = Math.sqrt(Math.pow(newX - currentX, 2) + Math.pow(newY - currentY, 2));
             attempts++;
         } while (distance < minDistance && attempts < 50);
 
-        currentTarget.style.left = `${newX}px`;
-        currentTarget.style.top = `${newY}px`;
+        currentTarget.style.transform = `translate(${newX}px, ${newY}px)`;
+        logEvent('TargetMoved', { fromX: Math.round(currentX), fromY: Math.round(currentY), toX: Math.round(newX), toY: Math.round(newY) });
+    }
 
-        logEvent('TargetMoved', {
-            fromX: Math.round(currentX), fromY: Math.round(currentY),
-            toX: Math.round(newX), toY: Math.round(newY)
+    function logEvent(eventType, data) {
+        if (!clientStartTimeEpoch) return;
+        eventBuffer.push({
+            timestamp: Date.now() - clientStartTimeEpoch,
+            eventType: eventType,
+            data: data || {}
         });
     }
 
     // =========================================================================
-    // EVENT LISTENERS
+    // DATA SYNC & HEALTH CHECK
     // =========================================================================
-    startButton.addEventListener('click', startTest);
-    document.addEventListener('keydown', (e) => e.key === 'Escape' && handleManualStop());
-    testArea.addEventListener('pointerdown', (e) => {
-        if (isTestRunning && !e.target.classList.contains('target')) {
-            logEvent('BackgroundTap', { x: e.clientX, y: e.clientY });
-        }
-    });
-    window.addEventListener('resize', () => isTestRunning && logEvent('ViewportChange', { width: window.innerWidth, height: window.innerHeight }));
-    document.addEventListener('visibilitychange', () => isTestRunning && logEvent('VisibilityChange', { isVisible: !document.hidden }));
+    async function sendBufferedData() {
+        if (eventBuffer.length === 0 || !sessionUUID) return;
 
-    // =========================================================================
-    // SERVER COMMUNICATION (No changes here)
-    // =========================================================================
-    async function sendDataToServer() {
+        // UPDATED: Log the attempt to sync data
+        console.log(`Attempting to sync ${eventBuffer.length} events for session ${sessionUUID}...`);
+
+        const dataToSend = [...eventBuffer];
         try {
-            const response = await fetch('/api/log', {
-                method: 'POST',
+            const response = await fetch(`/api/sessions/${sessionUUID}`, {
+                method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(sessionData),
+                body: JSON.stringify(dataToSend)
             });
             if (response.ok) {
-                const result = await response.json();
-                console.log('Server response:', result);
-                showToast(`Session data saved! DB ID: ${result.id}`);
+                eventBuffer.splice(0, dataToSend.length);
+                setStatusIndicator('success');
+                console.log("Sync successful.");
             } else {
-                console.error('Failed to save session data.', response.statusText);
-                showToast(`Error: Could not save data (${response.statusText})`, 'error');
+                throw new Error(`Server error: ${response.statusText}`);
             }
         } catch (error) {
-            console.error('Network error:', error);
-            showToast('Error: Could not connect to the server.', 'error');
+            console.error('Failed to sync data:', error);
+            setStatusIndicator('error');
         }
     }
+
+    async function checkDbStatus() {
+        // UPDATED: Log the attempt to check status
+        console.log("Checking DB status...");
+        try {
+            const response = await fetch('/api/healthcheck');
+            if (!response.ok) throw new Error('Network response was not ok.');
+
+            const result = await response.json();
+            dbStatusElement.textContent = result.message;
+            dbStatusElement.className = result.status === 'OK' ? 'ok' : 'error';
+
+        } catch (error) {
+            // UPDATED: Display specific error message
+            dbStatusElement.textContent = `Connection Error: ${error.message}`;
+            dbStatusElement.className = 'error';
+        }
+    }
+
+    // --- Start the application ---
+    init();
 });

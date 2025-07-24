@@ -8,39 +8,41 @@
 </head>
 <body>
 
-    <!-- Screen displayed before the test starts -->
-    <div id="start-screen">
+    <!-- Screen 1: Setup and Instructions -->
+    <div id="setup-screen" class="screen">
         <h1>Felis Silvestris IQ</h1>
-
-        <!-- Instructions for the test -->
         <div class="instructions">
-            <h2>How the Test Works</h2>
+            <h2>Instructions</h2>
             <p>
-                After entering the Experiment ID and pressing the "Start" button, the application will switch to fullscreen mode.
-                Pulsating circles will appear on the screen. The goal is for the kitten to touch them.
-            </p>
-            <p>
-                The test will run for the specified duration. If the duration is left empty, the test will run indefinitely until you manually stop it by pressing the <strong>Escape</strong> key.
-                All interactions are recorded.
+                Enter the experimental setup details below. The application will attempt to get your current location and check the database connection.
             </p>
         </div>
-
-        <!-- Container for input fields and button -->
         <div class="controls">
-            <input type="text" id="session-id-input" placeholder="Enter Experiment ID (Required)">
-            <input type="number" id="duration-input" placeholder="Test Duration in Seconds (Optional)">
-            <button id="start-button">Start Test</button>
+            <textarea id="setup-input" placeholder="Describe the Experimental Setup (e.g., kitten ID, environment, notes...)" rows="4"></textarea>
+            <input type="text" id="location-input" placeholder="Getting location..." readonly>
+            <!-- NEW: Status display for health check -->
+            <div id="db-status">Checking database connection...</div>
+            <button id="prepare-button">Prepare Experiment</button>
         </div>
     </div>
 
-    <!-- The area where the actual test takes place -->
-    <div id="test-area" class="hidden">
-        <!-- The pulsating target will be dynamically added here by JavaScript -->
+    <!-- Screen 2: QR Code and final start -->
+    <div id="qr-code-screen" class="screen hidden">
+        <h2>Experiment Prepared</h2>
+        <p>Scan the QR code with your recording device. This links your video to the dataset.</p>
+        <canvas id="qr-code-canvas"></canvas>
+        <p id="session-uuid-display"></p>
+        <button id="start-test-button">Start Experiment</button>
     </div>
 
-    <!-- Toast Notification for user feedback -->
-    <div id="toast-notification" class="toast hidden"></div>
+    <!-- Screen 3: The actual test area -->
+    <div id="test-area" class="hidden">
+        <!-- The connection status indicator -->
+        <div id="status-indicator"></div>
+    </div>
 
+    <!-- External library for QR Code generation -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
