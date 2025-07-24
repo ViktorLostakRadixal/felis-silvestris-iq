@@ -129,7 +129,7 @@ body, html {
     }
 }
 
-/* Utility class to hide elements */
+/* Utility class to hide elements - NOW WITH !important */
 .hidden {
-    display: none;
+    display: none !important;
 }

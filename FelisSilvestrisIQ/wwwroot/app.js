@@ -42,7 +42,8 @@
     // =========================================================================
     // TEST LOGIC
     // =========================================================================
-    function startTest() {
+    // MODIFIED: Converted to async function to handle fullscreen promise
+    async function startTest() {
         if (!sessionIdInput.value) {
             alert('Please enter an Experiment ID before starting.');
             return;
@@ -51,24 +52,35 @@
         initSessionLog();
         isTestRunning = true;
 
-        // BUG FIX: Ensure the start screen is hidden and test area is shown *before* going fullscreen.
+        // Make the test area visible so it can enter fullscreen
         startScreen.classList.add('hidden');
         testArea.classList.remove('hidden');
 
-        // Switch to fullscreen
-        document.documentElement.requestFullscreen().catch(err => {
+        try {
+            // Wait for the fullscreen request to successfully complete
+            await document.documentElement.requestFullscreen();
+
+            // This code will only run AFTER the browser is in fullscreen mode
+            logEvent('FullscreenEntered', {});
+
+            // Start the actual test cycle
+            showNewTarget();
+
+            const duration = parseInt(durationInput.value, 10);
+            if (duration > 0) {
+                testTimeout = setTimeout(endTest, duration * 1000);
+                logEvent('TestAutoStart', { duration: duration });
+            } else {
+                logEvent('TestManualStart', { duration: 'infinite' });
+            }
+        } catch (err) {
+            // If the user denies fullscreen or an error occurs, cancel the test
             console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
-        });
-
-        // Start the test cycle
-        showNewTarget();
-
-        const duration = parseInt(durationInput.value, 10);
-        if (duration > 0) {
-            testTimeout = setTimeout(endTest, duration * 1000);
-            logEvent('TestAutoStart', { duration: duration });
-        } else {
-            logEvent('TestManualStart', { duration: 'infinite' });
+            logEvent('FullscreenError', { message: err.message });
+            // Clean up and revert to start screen
+            isTestRunning = false;
+            testArea.classList.add('hidden');
+            startScreen.classList.remove('hidden');
         }
     }
 
@@ -77,11 +89,11 @@
         isTestRunning = false;
 
         clearTimeout(testTimeout);
+        // Check if we are in fullscreen before trying to exit
         if (document.fullscreenElement) {
             document.exitFullscreen();
         }
 
-        // BUG FIX: Ensure the test area is hidden and start screen is shown again.
         testArea.classList.add('hidden');
         startScreen.classList.remove('hidden');
         testArea.innerHTML = ''; // Clear any remaining targets
@@ -117,7 +129,6 @@
 
         testArea.appendChild(target);
 
-        // FEATURE ADDED: Logging the appearance and position of the new target.
         logEvent('TargetSpawned', { x: x, y: y, size: 100 });
     }
 
