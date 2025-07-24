@@ -44,7 +44,6 @@
         }
 
         checkDbStatus();
-        // UPDATED: Health check interval changed to 5 seconds
         setInterval(checkDbStatus, 5000);
 
         prepareButton.addEventListener('click', prepareExperiment);
@@ -63,6 +62,7 @@
     }
 
     function setStatusIndicator(state) {
+        if (!statusIndicator) return;
         if (state === 'success') {
             statusIndicator.className = 'success';
             setTimeout(() => statusIndicator.className = '', 1500);
@@ -122,6 +122,10 @@
     async function startTest() {
         isTestRunning = true;
         switchScreen('test');
+
+        // Hide the cursor when the test starts
+        document.body.classList.add('test-running');
+
         try {
             await document.documentElement.requestFullscreen();
             spawnInitialTarget();
@@ -137,20 +141,24 @@
         isTestRunning = false;
         clearInterval(dataUpdateInterval);
 
+        // Show the cursor again when the test ends
+        document.body.classList.remove('test-running');
+
         if (document.fullscreenElement) {
             await document.exitFullscreen();
         }
 
-        if (!forced) {
-            await sendBufferedData();
-        }
-
-        setTimeout(() => {
+        // Give the browser a moment to exit fullscreen before saving data
+        // and switching screens.
+        setTimeout(async () => {
+            if (!forced) {
+                await sendBufferedData();
+            }
             switchScreen('setup');
             sessionUUID = null;
             eventBuffer = [];
             if (screens.test) {
-                screens.test.innerHTML = '<div id="status-indicator"></div>';
+                screens.test.innerHTML = '<div id="status-indicator"></div>'; // Reset test area
             }
         }, 100);
     }
@@ -183,6 +191,7 @@
     }
 
     function moveTarget() {
+        if (!currentTarget) return;
         const transformMatrix = new DOMMatrix(window.getComputedStyle(currentTarget).transform);
         const currentX = transformMatrix.m41;
         const currentY = transformMatrix.m42;
@@ -215,7 +224,6 @@
     async function sendBufferedData() {
         if (eventBuffer.length === 0 || !sessionUUID) return;
 
-        // UPDATED: Log the attempt to sync data
         console.log(`Attempting to sync ${eventBuffer.length} events for session ${sessionUUID}...`);
 
         const dataToSend = [...eventBuffer];
@@ -239,19 +247,17 @@
     }
 
     async function checkDbStatus() {
-        // UPDATED: Log the attempt to check status
         console.log("Checking DB status...");
         try {
             const response = await fetch('/api/healthcheck');
             if (!response.ok) throw new Error('Network response was not ok.');
 
             const result = await response.json();
-            dbStatusElement.textContent = result.message;
+            dbStatusElement.textContent = `DB Status: ${result.message}`;
             dbStatusElement.className = result.status === 'OK' ? 'ok' : 'error';
 
         } catch (error) {
-            // UPDATED: Display specific error message
-            dbStatusElement.textContent = `Connection Error: ${error.message}`;
+            dbStatusElement.textContent = `DB Status: Connection Error - ${error.message}`;
             dbStatusElement.className = 'error';
         }
     }

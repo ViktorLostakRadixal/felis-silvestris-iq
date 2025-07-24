@@ -5,11 +5,17 @@ body, html {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background-color: #f0f2f5;
     color: #333;
-    overflow: hidden;
+    overflow: hidden; /* Prevent scrollbars */
 }
 
-/* Base class for a screen view */
-.screen {
+/* New class to hide the cursor during the test */
+.test-running {
+    -cursor: none;
+}
+
+
+/* === SETUP SCREEN === */
+#setup-screen {
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -17,20 +23,14 @@ body, html {
     min-height: 100vh;
     padding: 20px;
     box-sizing: border-box;
-    text-align: center;
 }
 
-h1 {
-    font-size: 3em;
-    color: #2c3e50;
-    margin-bottom: 20px;
-}
+    #setup-screen h1 {
+        font-size: 3em;
+        color: #2c3e50;
+        margin-bottom: 20px;
+    }
 
-h2 {
-    color: #34495e;
-}
-
-/* Instructions container */
 .instructions {
     max-width: 600px;
     background-color: #ffffff;
@@ -41,67 +41,30 @@ h2 {
     text-align: left;
 }
 
-    .instructions p {
-        line-height: 1.6;
-    }
-
-/* Controls container */
 .controls {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 15px;
     width: 100%;
-    max-width: 500px;
+    max-width: 400px;
 }
 
-textarea, input[type="text"] {
-    width: 100%;
-    padding: 12px 15px;
-    font-size: 1em;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    box-sizing: border-box;
-    transition: border-color 0.3s, box-shadow 0.3s;
-}
-
-textarea {
-    resize: vertical;
-    min-height: 80px;
-}
-
-    input:focus, textarea:focus {
-        border-color: #3498db;
-        outline: none;
-        box-shadow: 0 0 5px rgba(52, 152, 219, 0.5);
+    .controls textarea, .controls input {
+        width: 100%;
+        padding: 12px 15px;
+        font-size: 1em;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        box-sizing: border-box;
     }
 
-/* NEW: DB Status Styling */
-#db-status {
-    width: 100%;
-    padding: 10px;
-    border-radius: 5px;
-    background-color: #ecf0f1;
-    color: #7f8c8d;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 0.9em;
-    text-align: center;
-    transition: all 0.3s ease;
-}
-
-    #db-status.ok {
-        background-color: #e8f8f5;
-        color: #27ae60;
+    .controls textarea {
+        min-height: 100px;
+        resize: vertical;
     }
 
-    #db-status.error {
-        background-color: #fdedec;
-        color: #c0392b;
-        font-weight: bold;
-    }
-
-
-button {
+#prepare-button {
     padding: 12px 30px;
     font-size: 1.1em;
     font-weight: bold;
@@ -110,29 +73,53 @@ button {
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    transition: background-color 0.3s;
 }
 
-    button:hover {
-        background-color: #229954;
+#db-status {
+    margin-top: 10px;
+    font-style: italic;
+    color: #7f8c8d;
+}
+
+    #db-status.ok {
+        color: #27ae60;
     }
 
-/* QR Code Screen */
-#qr-code-canvas {
-    border: 5px solid white;
-    box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    #db-status.error {
+        color: #c0392b;
+        font-weight: bold;
+    }
+
+
+/* === QR CODE SCREEN === */
+#qr-code-screen {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    gap: 20px;
 }
 
 #session-uuid-display {
-    margin-top: 15px;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 1.1em;
-    background-color: #ecf0f1;
-    padding: 5px 10px;
+    font-size: 1.2em;
+    background: #ecf0f1;
+    padding: 10px 15px;
     border-radius: 5px;
 }
 
-/* Test area styling */
+#start-test-button {
+    padding: 15px 40px;
+    font-size: 1.5em;
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+/* === TEST AREA === */
 #test-area {
     width: 100vw;
     height: 100vh;
@@ -141,50 +128,51 @@ button {
     overflow: hidden;
 }
 
-/* Animated target styling - Flicker Fix */
 .target {
     width: 100px;
     height: 100px;
     background-color: white;
     border-radius: 50%;
     position: absolute;
-    cursor: pointer;
-    animation: pulse 1.5s infinite;
-    /* --- FLICKER FIX --- */
+    transform: translate(-150px, -150px); /* Initially off-screen */
+    transition: transform 0.5s cubic-bezier(0.25, 0.1, 0.25, 1);
     will-change: transform;
-    transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+    /* FIX: Re-added the animation property */
+    animation: pulse 1.5s infinite;
 }
 
-
 @keyframes pulse {
-    0%, 100% {
+    0% {
         box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
     }
 
     70% {
         box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
     }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+    }
 }
 
-/* Connection Status Indicator */
+
 #status-indicator {
-    position: fixed;
-    top: 20px;
+    position: absolute;
+    bottom: 20px;
     right: 20px;
     width: 20px;
     height: 20px;
     border-radius: 50%;
     background-color: transparent;
-    transition: background-color 0.5s ease;
-    z-index: 2000;
+    transition: background-color 0.5s;
 }
-
-    #status-indicator.error {
-        background-color: #e74c3c;
-    }
 
     #status-indicator.success {
         background-color: #2ecc71;
+    }
+
+    #status-indicator.error {
+        background-color: #e74c3c;
     }
 
 
