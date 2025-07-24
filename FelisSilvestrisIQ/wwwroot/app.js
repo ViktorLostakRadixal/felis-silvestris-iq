@@ -8,7 +8,6 @@
     const toast = document.getElementById('toast-notification');
 
     // Test Configuration
-    const TARGET_APPEAR_DELAY_MS = 2000;
     const TARGET_SIZE_PX = 100;
     const TARGET_COLOR = 'white';
 
@@ -16,6 +15,7 @@
     let sessionData = {};
     let isTestRunning = false;
     let testTimeout;
+    let currentTarget = null; // Reference to the moving target element
 
     // =========================================================================
     // UI FEEDBACK
@@ -29,7 +29,7 @@
     }
 
     // =========================================================================
-    // EVENT LOGGING
+    // EVENT LOGGING (No changes here)
     // =========================================================================
     function initSessionLog() {
         sessionData = {
@@ -78,8 +78,7 @@
         try {
             await document.documentElement.requestFullscreen();
             logEvent('FullscreenEntered', {});
-
-            showNewTarget();
+            spawnInitialTarget();
 
             const duration = parseInt(durationInput.value, 10);
             if (duration > 0) {
@@ -91,34 +90,38 @@
         } catch (err) {
             console.error(`Fullscreen request failed: ${err.message}`);
             logEvent('FullscreenError', { message: err.message });
-            isTestRunning = false;
-            // Revert UI if fullscreen fails
-            testArea.classList.add('hidden');
-            startScreen.classList.remove('hidden');
+            endTest(true); // End test immediately if fullscreen fails
         }
     }
 
-    function endTest() {
+    async function endTest(forced = false) {
         if (!isTestRunning) return;
         isTestRunning = false;
 
         clearTimeout(testTimeout);
 
         if (document.fullscreenElement) {
-            document.exitFullscreen();
+            await document.exitFullscreen();
         }
 
-        // Delay UI changes slightly to avoid race conditions with exiting fullscreen
+        // ** THE FIX IS HERE **
+        // We wrap the UI updates in a setTimeout. This gives the browser a moment
+        // to finish exiting fullscreen mode before we try to manipulate the DOM.
+        // This prevents the rendering race condition.
         setTimeout(() => {
             testArea.classList.add('hidden');
             startScreen.classList.remove('hidden');
-            testArea.innerHTML = '';
-        }, 100); // 100ms delay
+            testArea.innerHTML = ''; // Clean up
+            currentTarget = null;
 
-        sessionData.clientEndTime = new Date().toISOString();
-        logEvent('TestEnd', { reason: 'Duration elapsed or manually stopped' });
-
-        sendDataToServer();
+            if (forced) {
+                logEvent('TestEnd', { reason: 'Forced stop due to error' });
+            } else {
+                sessionData.clientEndTime = new Date().toISOString();
+                logEvent('TestEnd', { reason: 'Duration elapsed or manually stopped' });
+                sendDataToServer(); // Now this will be called when the UI is ready for the toast.
+            }
+        }, 100); // A 100ms delay is imperceptible but enough for the browser.
     }
 
     function handleManualStop() {
@@ -128,11 +131,7 @@
         }
     }
 
-    function showNewTarget() {
-        if (!isTestRunning) return;
-
-        testArea.innerHTML = '';
-
+    function spawnInitialTarget() {
         const target = document.createElement('div');
         target.className = 'target';
 
@@ -144,19 +143,15 @@
         target.style.height = `${TARGET_SIZE_PX}px`;
         target.style.backgroundColor = TARGET_COLOR;
 
-        target.addEventListener('pointerdown', (e) => handleTargetHit(e, target));
+        target.addEventListener('pointerdown', handleTargetHit);
 
         testArea.appendChild(target);
+        currentTarget = target;
 
-        logEvent('TargetSpawned', {
-            x: Math.round(x),
-            y: Math.round(y),
-            size: TARGET_SIZE_PX,
-            color: TARGET_COLOR
-        });
+        logEvent('TargetSpawned', { x: Math.round(x), y: Math.round(y), size: TARGET_SIZE_PX, color: TARGET_COLOR });
     }
 
-    function handleTargetHit(event, targetElement) {
+    function handleTargetHit(event) {
         if (!isTestRunning) return;
 
         logEvent('TargetHit', {
@@ -164,12 +159,35 @@
             y: event.clientY
         });
 
-        targetElement.style.backgroundColor = 'lime';
-        targetElement.style.transform = 'scale(1.2)';
+        moveTarget();
+    }
 
-        setTimeout(() => {
-            showNewTarget();
-        }, TARGET_APPEAR_DELAY_MS);
+    function moveTarget() {
+        const currentX = parseFloat(currentTarget.style.left);
+        const currentY = parseFloat(currentTarget.style.top);
+
+        const screenLongerEdge = Math.max(window.innerWidth, window.innerHeight);
+        const minDistance = screenLongerEdge / 3;
+
+        let newX, newY, distance;
+        let attempts = 0;
+
+        do {
+            newX = Math.random() * (window.innerWidth - TARGET_SIZE_PX);
+            newY = Math.random() * (window.innerHeight - TARGET_SIZE_PX);
+            const dx = newX - currentX;
+            const dy = newY - currentY;
+            distance = Math.sqrt(dx * dx + dy * dy);
+            attempts++;
+        } while (distance < minDistance && attempts < 50);
+
+        currentTarget.style.left = `${newX}px`;
+        currentTarget.style.top = `${newY}px`;
+
+        logEvent('TargetMoved', {
+            fromX: Math.round(currentX), fromY: Math.round(currentY),
+            toX: Math.round(newX), toY: Math.round(newY)
+        });
     }
 
     // =========================================================================
@@ -186,7 +204,7 @@
     document.addEventListener('visibilitychange', () => isTestRunning && logEvent('VisibilityChange', { isVisible: !document.hidden }));
 
     // =========================================================================
-    // SERVER COMMUNICATION
+    // SERVER COMMUNICATION (No changes here)
     // =========================================================================
     async function sendDataToServer() {
         try {
@@ -196,10 +214,8 @@
                 body: JSON.stringify(sessionData),
             });
             if (response.ok) {
-                // MODIFIED: Parse the JSON response to get the ID
                 const result = await response.json();
                 console.log('Server response:', result);
-                // MODIFIED: Display the returned ID in the toast notification
                 showToast(`Session data saved! DB ID: ${result.id}`);
             } else {
                 console.error('Failed to save session data.', response.statusText);

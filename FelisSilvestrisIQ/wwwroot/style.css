@@ -98,9 +98,10 @@ body, html {
     height: 100vh;
     background-color: black;
     position: relative;
+    overflow: hidden; /* Ensure target doesn't create scrollbars during animation */
 }
 
-/* Pulsating target styling */
+/* Pulsating target styling - NOW WITH TRANSITION */
 .target {
     width: 100px;
     height: 100px;
@@ -109,7 +110,8 @@ body, html {
     position: absolute;
     cursor: pointer;
     animation: pulse 1.5s infinite;
-    transition: background-color 0.2s, transform 0.2s;
+    /* This is the new magic for smooth movement */
+    transition: top 0.5s ease-in-out, left 0.5s ease-in-out;
 }
 
 @keyframes pulse {
