@@ -1,0 +1,43 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Felis Silvestris IQ - Cognitive Test</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Screen displayed before the test starts -->
+    <div id="start-screen">
+        <h1>Felis Silvestris IQ</h1>
+
+        <!-- Instructions for the test -->
+        <div class="instructions">
+            <h2>How the Test Works</h2>
+            <p>
+                After entering the Experiment ID and pressing the "Start" button, the application will switch to fullscreen mode.
+                Pulsating circles will appear on the screen. The goal is for the kitten to touch them.
+            </p>
+            <p>
+                The test will run for the specified duration. If the duration is left empty, the test will run indefinitely until you manually stop it by pressing the <strong>Escape</strong> key.
+                All interactions are recorded.
+            </p>
+        </div>
+
+        <!-- Container for input fields and button -->
+        <div class="controls">
+            <input type="text" id="session-id-input" placeholder="Enter Experiment ID (Required)">
+            <input type="number" id="duration-input" placeholder="Test Duration in Seconds (Optional)">
+            <button id="start-button">Start Test</button>
+        </div>
+    </div>
+
+    <!-- The area where the actual test takes place -->
+    <div id="test-area" class="hidden">
+        <!-- The pulsating target will be dynamically added here by JavaScript -->
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

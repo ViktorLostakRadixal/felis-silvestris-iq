@@ -1,0 +1,32 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/packages
+
+# project output
+/bin
+/obj
+
+# user-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio temp files
+.vs/
+project.lock.json
+project.fragment.lock.json
+
+# Rider
+.idea/
+*.sln.iml
+
+# Mac
+.DS_Store
+
+# others
+*.log
+*.tmp
+*.bak
