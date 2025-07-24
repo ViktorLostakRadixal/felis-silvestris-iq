@@ -5,9 +5,12 @@
     const startButton = document.getElementById('start-button');
     const sessionIdInput = document.getElementById('session-id-input');
     const durationInput = document.getElementById('duration-input');
+    const toast = document.getElementById('toast-notification');
 
     // Test Configuration
-    const TARGET_APPEAR_DELAY_MS = 2000; // Time between targets
+    const TARGET_APPEAR_DELAY_MS = 2000;
+    const TARGET_SIZE_PX = 100;
+    const TARGET_COLOR = 'white';
 
     // State Variables
     let sessionData = {};
@@ -15,18 +18,36 @@
     let testTimeout;
 
     // =========================================================================
+    // UI FEEDBACK
+    // =========================================================================
+    function showToast(message, type = 'success') {
+        toast.textContent = message;
+        toast.className = `toast show ${type}`;
+        setTimeout(() => {
+            toast.className = 'toast hidden';
+        }, 5000); // Hide after 5 seconds
+    }
+
+    // =========================================================================
     // EVENT LOGGING
     // =========================================================================
     function initSessionLog() {
         sessionData = {
             sessionId: sessionIdInput.value || `Session_${new Date().toISOString()}`,
-            machineName: '', // This is hard to get reliably from a browser, can be added manually
             userAgent: navigator.userAgent,
+            device: {
+                viewport: { width: window.innerWidth, height: window.innerHeight },
+                screen: {
+                    width: window.screen.width,
+                    height: window.screen.height,
+                    pixelRatio: window.devicePixelRatio
+                }
+            },
             clientStartTime: new Date().toISOString(),
             clientEndTime: null,
             events: []
         };
-        logEvent('SessionStart', { viewport: { width: window.innerWidth, height: window.innerHeight } });
+        logEvent('SessionStart', sessionData.device);
     }
 
     function logEvent(eventType, data) {
@@ -42,7 +63,6 @@
     // =========================================================================
     // TEST LOGIC
     // =========================================================================
-    // MODIFIED: Converted to async function to handle fullscreen promise
     async function startTest() {
         if (!sessionIdInput.value) {
             alert('Please enter an Experiment ID before starting.');
@@ -52,33 +72,27 @@
         initSessionLog();
         isTestRunning = true;
 
-        // Make the test area visible so it can enter fullscreen
         startScreen.classList.add('hidden');
         testArea.classList.remove('hidden');
 
         try {
-            // Wait for the fullscreen request to successfully complete
             await document.documentElement.requestFullscreen();
-
-            // This code will only run AFTER the browser is in fullscreen mode
             logEvent('FullscreenEntered', {});
 
-            // Start the actual test cycle
             showNewTarget();
 
             const duration = parseInt(durationInput.value, 10);
             if (duration > 0) {
                 testTimeout = setTimeout(endTest, duration * 1000);
-                logEvent('TestAutoStart', { duration: duration });
+                logEvent('TestAutoStart', { duration });
             } else {
                 logEvent('TestManualStart', { duration: 'infinite' });
             }
         } catch (err) {
-            // If the user denies fullscreen or an error occurs, cancel the test
-            console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`);
+            console.error(`Fullscreen request failed: ${err.message}`);
             logEvent('FullscreenError', { message: err.message });
-            // Clean up and revert to start screen
             isTestRunning = false;
+            // Revert UI if fullscreen fails
             testArea.classList.add('hidden');
             startScreen.classList.remove('hidden');
         }
@@ -89,14 +103,17 @@
         isTestRunning = false;
 
         clearTimeout(testTimeout);
-        // Check if we are in fullscreen before trying to exit
+
         if (document.fullscreenElement) {
             document.exitFullscreen();
         }
 
-        testArea.classList.add('hidden');
-        startScreen.classList.remove('hidden');
-        testArea.innerHTML = ''; // Clear any remaining targets
+        // Delay UI changes slightly to avoid race conditions with exiting fullscreen
+        setTimeout(() => {
+            testArea.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+            testArea.innerHTML = '';
+        }, 100); // 100ms delay
 
         sessionData.clientEndTime = new Date().toISOString();
         logEvent('TestEnd', { reason: 'Duration elapsed or manually stopped' });
@@ -111,7 +128,6 @@
         }
     }
 
-
     function showNewTarget() {
         if (!isTestRunning) return;
 
@@ -120,16 +136,24 @@
         const target = document.createElement('div');
         target.className = 'target';
 
-        const x = Math.random() * (window.innerWidth - 100) + 50;
-        const y = Math.random() * (window.innerHeight - 100) + 50;
+        const x = Math.random() * (window.innerWidth - TARGET_SIZE_PX);
+        const y = Math.random() * (window.innerHeight - TARGET_SIZE_PX);
         target.style.left = `${x}px`;
         target.style.top = `${y}px`;
+        target.style.width = `${TARGET_SIZE_PX}px`;
+        target.style.height = `${TARGET_SIZE_PX}px`;
+        target.style.backgroundColor = TARGET_COLOR;
 
         target.addEventListener('pointerdown', (e) => handleTargetHit(e, target));
 
         testArea.appendChild(target);
 
-        logEvent('TargetSpawned', { x: x, y: y, size: 100 });
+        logEvent('TargetSpawned', {
+            x: Math.round(x),
+            y: Math.round(y),
+            size: TARGET_SIZE_PX,
+            color: TARGET_COLOR
+        });
     }
 
     function handleTargetHit(event, targetElement) {
@@ -137,9 +161,7 @@
 
         logEvent('TargetHit', {
             x: event.clientX,
-            y: event.clientY,
-            targetX: parseFloat(targetElement.style.left),
-            targetY: parseFloat(targetElement.style.top)
+            y: event.clientY
         });
 
         targetElement.style.backgroundColor = 'lime';
@@ -153,32 +175,15 @@
     // =========================================================================
     // EVENT LISTENERS
     // =========================================================================
-
     startButton.addEventListener('click', startTest);
-
-    document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-            handleManualStop();
-        }
-    });
-
+    document.addEventListener('keydown', (e) => e.key === 'Escape' && handleManualStop());
     testArea.addEventListener('pointerdown', (e) => {
         if (isTestRunning && !e.target.classList.contains('target')) {
             logEvent('BackgroundTap', { x: e.clientX, y: e.clientY });
         }
     });
-
-    window.addEventListener('resize', () => {
-        if (isTestRunning) {
-            logEvent('ViewportChange', { width: window.innerWidth, height: window.innerHeight });
-        }
-    });
-
-    document.addEventListener('visibilitychange', () => {
-        if (isTestRunning) {
-            logEvent('VisibilityChange', { isVisible: !document.hidden });
-        }
-    });
+    window.addEventListener('resize', () => isTestRunning && logEvent('ViewportChange', { width: window.innerWidth, height: window.innerHeight }));
+    document.addEventListener('visibilitychange', () => isTestRunning && logEvent('VisibilityChange', { isVisible: !document.hidden }));
 
     // =========================================================================
     // SERVER COMMUNICATION
@@ -187,22 +192,22 @@
         try {
             const response = await fetch('/api/log', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(sessionData),
             });
             if (response.ok) {
+                // MODIFIED: Parse the JSON response to get the ID
                 const result = await response.json();
-                console.log('Server response:', result.message);
-                alert('Session data saved successfully!');
+                console.log('Server response:', result);
+                // MODIFIED: Display the returned ID in the toast notification
+                showToast(`Session data saved! DB ID: ${result.id}`);
             } else {
                 console.error('Failed to save session data.', response.statusText);
-                alert('Error: Could not save session data to the server.');
+                showToast(`Error: Could not save data (${response.statusText})`, 'error');
             }
         } catch (error) {
             console.error('Network error:', error);
-            alert('Error: Could not connect to the server.');
+            showToast('Error: Could not connect to the server.', 'error');
         }
     }
 });
